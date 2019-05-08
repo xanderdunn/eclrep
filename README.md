@@ -11,6 +11,9 @@ For training/finetuning: note that backpropagation of an mLSTM of this size is v
 - Run docker: `docker/run_gpu_docker.sh`. This will launch Jupyter. Copy and paste the provided URL into your browser. Note that if you are running this code on a remote machine you will need to set up port forwarding between your local machine and your remote machine. See this [example](https://coderwall.com/p/ohk6cg/remote-access-to-ipython-notebooks-via-ssh) (note that in our case jupyter is serving port 8888, not 8889 as the example describes).
 - Open up the `unirep_tutorial.ipynb` notebook and get started.
 
+## Data Sources
+- Stability data is from David Baker's Science paper ["Global analysis of protein folding using massively parallel design, synthesis, and testing"](https://science.sciencemag.org/content/suppl/2017/07/12/357.6347.168.DC1)
+
 ## Weight files
 
 The `unirep_tutorial.ipynb` notebook downloads the needed weight files for the 64-unit and 1900-unit UniRep models.
