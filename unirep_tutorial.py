@@ -25,25 +25,19 @@ import numpy as np
 tf.set_random_seed(42)
 np.random.seed(42)
 
-if USE_FULL_1900_DIM_MODEL:
-    # Sync relevant weight files
-    get_ipython().system('aws s3 sync --no-sign-request --quiet s3://unirep-public/1900_weights/ 1900_weights/')
-    
+if USE_FULL_1900_DIM_MODEL:    
     # Import the mLSTM babbler model
     from unirep import babbler1900 as babbler
     
     # Where model weights are stored.
-    MODEL_WEIGHT_PATH = "./1900_weights"
+    MODEL_WEIGHT_PATH = "./data/1900_weights"
     
 else:
-    # Sync relevant weight files
-    get_ipython().system('aws s3 sync --no-sign-request --quiet s3://unirep-public/64_weights/ 64_weights/')
-    
     # Import the mLSTM babbler model
     from unirep import babbler64 as babbler
     
     # Where model weights are stored.
-    MODEL_WEIGHT_PATH = "./64_weights"
+    MODEL_WEIGHT_PATH = "./data/64_weights"
 
 
 # ## Data formatting and management
@@ -54,7 +48,7 @@ else:
 
 
 batch_size = 12
-b = babbler(batch_size=batch_size, model_path=MODEL_WEIGHT_PATH)
+model = babbler(batch_size=batch_size, model_path=MODEL_WEIGHT_PATH)
 
 
 # UniRep needs to receive data in the correct format, a (batch_size, max_seq_len) matrix with integer values, where the integers correspond to an amino acid label at that position, and the end of the sequence is padded with 0s until the max sequence length to form a non-ragged rectangular matrix. We provide a formatting function to translate a string of amino acids into a list of integers with the correct codex:
@@ -68,15 +62,15 @@ seq = "MRKGEELFTGVVPILVELDGDVNGHKFSVRGEGEGDATNGKLTLKFICTTGKLPVPWPTLVTTLTYGVQCFAR
 # In[5]:
 
 
-np.array(b.format_seq(seq))
+np.array(model.format_seq(seq))
 
 
 # We also provide a function that will check your amino acid sequences don't contain any characters which will break the UniRep model.
 
-# In[7]:
+# In[6]:
 
 
-b.is_valid_seq(seq)
+model.is_valid_seq(seq)
 
 
 # You could use your own data flow as long as you ensure that the data format is obeyed. Alternatively, you can use the data flow we've implemented for UniRep training, which happens in the tensorflow graph. It reads from a file of integer sequences, shuffles them around, collects them into groups of similar length (to minimize padding waste) and pads them to the max_length. Here's how to do that:
@@ -85,7 +79,7 @@ b.is_valid_seq(seq)
 # 
 # Sequence formatting can be done as follows:
 
-# In[8]:
+# In[7]:
 
 
 # Before you can train your model, 
@@ -93,7 +87,7 @@ with open("seqs.txt", "r") as source:
     with open("formatted.txt", "w") as destination:
         for i,seq in enumerate(source):
             seq = seq.strip()
-            if b.is_valid_seq(seq) and len(seq) < 275: 
+            if model.is_valid_seq(seq) and len(seq) < 275: 
                 formatted = ",".join(map(str,b.format_seq(seq)))
                 destination.write(formatted)
                 destination.write('\n')
@@ -101,7 +95,7 @@ with open("seqs.txt", "r") as source:
 
 # This is what the integer format looks like
 
-# In[9]:
+# In[8]:
 
 
 get_ipython().system('head -n1 formatted.txt')
@@ -119,17 +113,17 @@ get_ipython().system('head -n1 formatted.txt')
 # - Automatically padding the sequences with zeros so the returned batch is a perfect rectangle
 # - Automatically repeating the dataset
 
-# In[10]:
+# In[9]:
 
 
-bucket_op = b.bucket_batch_pad("formatted.txt", interval=1000) # Large interval
+bucket_op = model.bucket_batch_pad("formatted.txt", interval=1000) # Large interval
 
 
 # Inconveniently, this does not make it easy for a value to be associated with each sequence and not lost during shuffling. You can get around this by just prepending every integer sequence with the sequence label (eg, every sequence would be saved to the file as "{brightness value}, 24, 1, 5,..." and then you could just index out the first column after calling the `bucket_op`. Please reach out if you have questions on how to do this.
 
 # Now that we have the `bucket_op`, we can simply `sess.run()` it to get a correctly formatted batch
 
-# In[11]:
+# In[10]:
 
 
 with tf.Session() as sess:
@@ -146,11 +140,11 @@ print(batch.shape)
 
 # First, obtain all of the ops needed to output a representation
 
-# In[12]:
+# In[11]:
 
 
 final_hidden, x_placeholder, batch_size_placeholder, seq_length_placeholder, initial_state_placeholder = (
-    b.get_rep_ops())
+    model.get_rep_ops())
 
 
 # `final_hidden` should be a batch_size x rep_dim matrix.
@@ -163,7 +157,7 @@ final_hidden, x_placeholder, batch_size_placeholder, seq_length_placeholder, ini
 # 
 # 3.  Minimizing the loss inside of a TensorFlow session
 
-# In[13]:
+# In[12]:
 
 
 y_placeholder = tf.placeholder(tf.float32, shape=[None,1], name="y")
@@ -181,7 +175,7 @@ loss = tf.losses.mean_squared_error(y_placeholder, prediction)
 
 # You can specifically train the top model first by isolating variables of the "top" scope, and forcing the optimizer to only optimize these.
 
-# In[14]:
+# In[13]:
 
 
 learning_rate=.001
@@ -193,7 +187,7 @@ all_step_op = optimizer.minimize(loss)
 
 # We next need to define a function that allows us to calculate the length each sequence in the batch so that we know what index to use to obtain the right "final" hidden state
 
-# In[15]:
+# In[14]:
 
 
 def nonpad_len(batch):
@@ -206,7 +200,7 @@ nonpad_len(batch)
 
 # We are ready to train. As an illustration, let's learn to predict the number 42 just optimizing the top model.
 
-# In[16]:
+# In[15]:
 
 
 y = [[42]]*batch_size
@@ -222,7 +216,7 @@ with tf.Session() as sess:
                      y_placeholder: y,
                      batch_size_placeholder: batch_size,
                      seq_length_placeholder:length,
-                     initial_state_placeholder:b._zero_state
+                     initial_state_placeholder:model._zero_state
                 }
         )
                   
@@ -231,7 +225,7 @@ with tf.Session() as sess:
 
 # We can also jointly train the top model and the mLSTM. Note that if using the 1900-unit (full) model, you will need a GPU with at least 16GB RAM. To see a demonstration of joint training with fewer computational resources, please run this notebook using the 64-unit model.
 
-# In[17]:
+# In[16]:
 
 
 y = [[42]]*batch_size
@@ -247,9 +241,15 @@ with tf.Session() as sess:
                      y_placeholder: y,
                      batch_size_placeholder: batch_size,
                      seq_length_placeholder:length,
-                     initial_state_placeholder:b._zero_state
+                     initial_state_placeholder:model._zero_state
                 }
         )
         
         print("Iteration {0}: {1}".format(i,loss_))
+
+
+# In[ ]:
+
+
+
 
