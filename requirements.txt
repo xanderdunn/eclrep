@@ -3,3 +3,4 @@ pandas==0.23.4
 jupyter==1.0.0
 tqdm
 tables
+plotly
