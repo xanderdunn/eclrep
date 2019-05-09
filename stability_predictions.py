@@ -4,90 +4,101 @@
 # In[1]:
 
 
-import tensorflow as tf
-import numpy as np
-
-# Set seeds
-tf.set_random_seed(42)
-np.random.seed(42)
-   
-# Import the mLSTM babbler model
-from unirep import babbler1900 as babbler
-    
-# Where model weights are stored.
-MODEL_WEIGHT_PATH = "./data/1900_weights"
-
-
-# In[2]:
-
-
-batch_size = 12
-model = babbler(batch_size=batch_size, model_path=MODEL_WEIGHT_PATH)
-
-
-# In[72]:
-
-
 import os
 import pandas as pd
 import numpy as np
-from tqdm import tqdm_notebook as tqdm
+from sklearn import linear_model
+from sklearn.datasets import make_regression
+from sklearn.model_selection import train_test_split
+from scipy import stats
+
+np.random.seed(42)
+
+import sys
+import numpy
+numpy.set_printoptions(threshold=sys.maxsize)
 
 path = "./data/stability_data"
 output_path = os.path.join(path, "stability_with_unirep_fusion.hdf")
 
-existing_output = pd.DataFrame(columns=["name", "sequence", "stability"])
-if os.path.isfile(output_path):
-    print("Reading existing output file...")
-    existing_output = pd.read_hdf(output_path, key="ids")
-    print("Got {} existing data points".format(existing_output.shape[0]))
-    duplicates = existing_output.duplicated(subset=["sequence"])
-    assert True not in duplicates.values
-
-new_ids_output = pd.DataFrame(columns=["name", "sequence", "stability"])
-new_reps_output = pd.DataFrame(columns=list(range(0, 5700)))
-
-for filename in os.listdir(path):
-    if filename.endswith(".txt"):
-        print("Processing data from {}".format(filename))
-        df = pd.read_table(os.path.join(path, filename))
-        for index, row in tqdm(df.iterrows(), total=df.shape[0]): # TODO: Parallelize this
-            if index != 0 and index % 20 == 0:
-                assert new_ids_output.shape[0] == new_reps_output.shape[0]
-                if new_ids_output.shape[0] > 0:
-                    print("Appending {} points...".format(new_ids_output.shape[0]))
-                    new_ids_output.to_hdf(output_path, index=False, mode="a", key="ids", format="table", append=True)
-                    new_ids_output = pd.DataFrame(columns=["name", "sequence", "stability"])
-                    new_reps_output.to_hdf(output_path, index=False, mode="a", key="reps", format="table", append=True)
-                    new_reps_output = pd.DataFrame(columns=list(range(0, 5700)))
-            # If there is no existing data or the existing data already contains this sequence, ignore it
-            if existing_output.empty or not row["sequence"] in existing_output["sequence"].values:
-                if model.is_valid_seq(row["sequence"], max_len=500):
-                    unirep_fusion = model.get_rep(row["sequence"])
-                    unirep_fusion = np.concatenate((unirep_fusion[0], unirep_fusion[1], unirep_fusion[2]))
-                    if "consensus_stability_score" in df.columns:
-                        stability_score = row["consensus_stability_score"]
-                    else:
-                        stability_score = row["stabilityscore"]
-                    new_ids_output.loc[len(new_ids_output)]=[row["name"], row["sequence"], stability_score]
-                    new_reps_output.loc[len(new_reps_output)]=unirep_fusion
-
-
-# In[71]:
-
-
 ids = pd.read_hdf(output_path, key="ids")
-print("{} points in ids".format(ids.shape[0]))
 reps = pd.read_hdf(output_path, key="reps")
-print("{} points in reps".format(reps.shape[0]))
-print(reps.iloc[0])
 
+print("X: {}".format(reps.shape))
+print("Y: {}".format(ids["stability"].shape))
 
-# In[1]:
-
-
-from sklearn import linear_model
 # LassoLars usage: https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LassoLars.html#sklearn.linear_model.LassoLars
-reg = linear_model.LassoLars(alpha=0.01)
-reg.fit(X, Y)
+
+
+# In[12]:
+
+
+from data_utils import aa_seq_to_int
+
+seq_ints = []
+
+for seq in ids["sequence"]:
+    seq_int = aa_seq_to_int(seq)
+    seq_ints += [seq_int]
+    
+X_train, X_test, y_train, y_test = train_test_split(seq_ints, ids["stability"], test_size=0.15)
+
+cv = 3
+reg_sequences = linear_model.LassoLarsCV(cv=cv)
+print("Training...")
+reg_sequences.fit(X_train, y_train)
+
+score_train = reg_sequences.score(X_train, y_train)
+score_test = reg_sequences.score(X_test, y_test)
+print("Train score: {}".format(score_train))
+print("Test score: {}".format(score_test))
+
+
+# In[ ]:
+
+
+X_train, X_test, y_train, y_test = train_test_split(reps, ids["stability"], test_size=0.15)
+print("{} points in test set".format(X_train.shape[0]))
+
+cv = 3
+reg_uni = linear_model.LassoLarsCV(cv=cv)
+print("Training {}-fold cross validated LassoLars with UniRep Fusion representations as input...".format())
+reg_uni.fit(X_train, y_train)
+
+
+# In[4]:
+
+
+score_train = reg_uni.score(X_train, y_train)
+score_test = reg_uni.score(X_test, y_test)
+print("Train score: {}".format(score_train))
+print("Test score: {}".format(score_test))
+
+# Get Spearman's p correlation on test set predictions
+test_predictions = reg_uni.predict(X_test)
+spearman_test = stats.spearmanr(test_predictions, y_test)
+print("Spearman's p on test set: {}".format(spearman_test))
+
+# Plot the predictions vs. measured values
+import plotly.plotly as py
+import plotly
+import plotly.graph_objs as go
+
+plotly.tools.set_credentials_file(username='xanderdunn', api_key='GtTpDQavToMaADqeMMu4')
+
+trace = go.Scatter(
+    x = test_predictions,
+    y = y_test,
+    mode = 'markers'
+)
+
+py.iplot([trace], filename="Peptide Stability Prediction vs. Measured Stability")
+
+
+# ![Capture.PNG](attachment:Capture.PNG)
+
+# In[ ]:
+
+
+
 
