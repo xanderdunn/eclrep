@@ -25,7 +25,7 @@ batch_size = 12
 model = babbler(batch_size=batch_size, model_path=MODEL_WEIGHT_PATH)
 
 
-# In[ ]:
+# In[3]:
 
 
 import os
@@ -65,6 +65,7 @@ for filename in os.listdir(path):
                 if model.is_valid_seq(row["sequence"], max_len=500):
                     unirep_fusion = model.get_rep(row["sequence"])
                     unirep_fusion = np.concatenate((unirep_fusion[0], unirep_fusion[1], unirep_fusion[2]))
+                    print(unirep_fusion.shape)
                     if "consensus_stability_score" in df.columns:
                         stability_score = row["consensus_stability_score"]
                     else:
