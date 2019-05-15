@@ -1,4 +1,4 @@
-
+#!/usr/bin/env python
 # coding: utf-8
 
 # In[1]:
@@ -23,6 +23,37 @@ MODEL_WEIGHT_PATH = "./data/1900_weights"
 
 batch_size = 12
 model = babbler(batch_size=batch_size, model_path=MODEL_WEIGHT_PATH)
+
+
+# In[ ]:
+
+
+# Check that representations are reproducible
+import os
+import pandas as pd
+from tqdm import tqdm_notebook as tqdm
+
+# Load the saved representations
+path = "./data/stability_data"
+output_path = os.path.join(path, "stability_with_unirep_fusion.hdf")
+existing_seqs = pd.read_hdf(output_path, key="ids").reset_index(drop=True)
+existing_reps = pd.read_hdf(output_path, key="reps").reset_index(drop=True)
+assert existing_seqs.shape[0] == existing_reps.shape[0]
+assert np.array_equal(existing_seqs.index, existing_reps.index)
+
+# Create reprensetations for some seqs
+for index, row in tqdm(existing_seqs.iterrows(), total=existing_seqs.shape[0]):
+    check_rep_1 = model.get_rep(row["sequence"])
+    check_rep_1 = np.concatenate((check_rep_1[0], check_rep_1[1], check_rep_1[2]))
+    check_rep_2 = model.get_rep(row["sequence"])
+    check_rep_2 = np.concatenate((check_rep_2[0], check_rep_2[1], check_rep_2[2]))
+    true_rep = existing_reps.iloc[index].values
+
+    if not np.allclose(true_rep, check_rep_1, atol=0.0002) or not np.allclose(check_rep_1, check_rep_2, atol=0.0002):
+        true_check_diff = abs(np.sum(true_rep - check_rep_1))
+        self_run_diff = abs(np.sum(check_rep_1 - check_rep_2))
+        print("{}: {} difference with saved truth".format(index, true_check_diff))
+        print("{}: {} difference with self comparison".format(index, self_run_diff))
 
 
 # In[3]:
@@ -51,6 +82,7 @@ for filename in os.listdir(path):
     if filename.endswith(".txt"):
         print("Processing data from {}".format(filename))
         df = pd.read_table(os.path.join(path, filename))
+        model.get_rep(df["sequence"].values)
         for index, row in tqdm(df.iterrows(), total=df.shape[0]): # TODO: Parallelize this
             if index != 0 and index % 20 == 0:
                 assert new_ids_output.shape[0] == new_reps_output.shape[0]
