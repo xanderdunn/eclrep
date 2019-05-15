@@ -42,3 +42,4 @@ def script_post_save(model, os_path, contents_manager, **kwargs):
         f.write(script)
 
 c.FileContentsManager.post_save_hook = script_post_save
+c.NotebookApp.password = 'sha1:c95cf7ad4d8c:e9feb587683eb6b2809b80c86be0ff3dd35167ce'
