@@ -4,6 +4,15 @@ We present an interface for training, inferencing representations, generative mo
 
 For training/finetuning: note that backpropagation of an mLSTM of this size is very memory intensive, and the primary determinant of memory use is the max length of the input sequence rather than the batch size. We have finetuned on GFP-like fluorescent proteins (~120-280aa) on a p3.2xlarge instance (aws) with 16G GPU memory successfully. Higher memory hardware should accommodate larger sequences, as will using one of the smaller pre-trained models (64 or 256).
 
+## Overview
+- Start with 24mil UniRef50 sequence trained model.  This model has learned a general representation of protein sequences.
+- Find sequences of proteins known to bind to our target sequences
+- Remove sequences longer than 500AAs and with invalid letters (~100 sequences)
+- Use JackHMMER (20 iter) to iteratively find protein sequences that are likely evolutionary related (~25k)
+- 13k unsupervised weight updates (65 epochs) of the sequence trained model on these ~25k sequence
+- Train a sparse linear regression model to predict binding to GDF8, GDF11, activinA, and BMP9.  Inputs are the sequence trained model's representations of the proteins and targets are whether they bind.
+- Now we can predict binding on peptides that have not yet been tested.
+
 ## Setup
 
 - System requirements: NVIDIA CUDA 8.0 (V8.0.61), NVIDIA cuDNN 6.0.21, NVIDIA GPU Driver 410.79 (though == 361.93 or >= 375.51 should work. Untested), nvidia-docker. The 64-unit model should be OK to run on any machine. The full-sized model will require a machine with more than 16GB of GPU RAM.
