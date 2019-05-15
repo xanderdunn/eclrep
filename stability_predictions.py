@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[32]:
+# In[1]:
 
 
 import os
@@ -29,55 +29,40 @@ print("X: {}".format(reps.shape))
 print("Y: {}".format(ids["stability"].shape))
 
 
-# In[36]:
+# In[17]:
 
 
 test_set_protein_names = ["hYAP65", "EHEE_rd2_0005", "HHH_rd3_0138", "HHH_rd2_0134", "villin", "EEHEE_rd3_1498", "EEHEE_rd3_0037", "HEEH_rd3_0872"]
 
-test_proteins = pd.DataFrame(columns=["sequence", "stability", "name"])
-test_reps = pd.DataFrame(columns=list(range(0, 5700)))
-train_proteins = pd.DataFrame(columns=["sequence", "stability", "name"])
-train_reps = pd.DataFrame(columns=list(range(0, 5700)))
-# Iterate the ids and put them into train or test based on matching the 
-for index, row in tqdm(ids.iterrows(), total=ids.shape[0]):
-    if any(protein in row["name"] for protein in test_set_protein_names):
-        test_proteins.loc[len(test_proteins)]=[row["sequence"], row["stability"], row["name"]]
-        test_reps.loc[len(test_reps)]=reps.iloc[index]
-    else:
-        train_proteins.loc[len(train_proteins)]=[row["sequence"], row["stability"], row["name"]]
-        train_reps.loc[len(train_reps)]=reps.iloc[index]
+test_indices = ids.name.str.contains('|'.join(test_set_protein_names))
 
-
-# In[31]:
-
-
-print(train_proteins.shape)
-print(train_reps.shape)
+test_proteins = ids[test_indices]
 print(test_proteins.shape)
+test_reps = reps[test_indices]
 print(test_reps.shape)
-print(test_proteins.iloc[0])
-print(test_reps.iloc[0])
-print(ids.iloc[0])
-print(reps.iloc[0])
+train_proteins = ids[~test_indices]
+print(train_proteins.shape)
+train_reps = reps[~test_indices]
+print(train_reps.shape)
+
+assert test_proteins.shape[0]+train_proteins.shape[0] == ids.shape[0]
 
 
-# In[33]:
+# In[51]:
 
 
 from data_utils import aa_seq_to_int
 
-seq_ints = []
-
-for seq in ids["sequence"]:
-    seq_int = aa_seq_to_int(seq)
-    seq_ints += [seq_int]
+seq_ints = ids["sequence"].apply(aa_seq_to_int).tolist()
     
 X_train, X_test, y_train, y_test = train_test_split(seq_ints, ids["stability"], test_size=0.15)
 
-cv = 3
+cv = 20
 # LassoLars usage: https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LassoLars.html#sklearn.linear_model.LassoLars
 reg_sequences = linear_model.LassoLarsCV(cv=cv)
 print("Training...")
+print(len(X_train))
+print(y_train.shape)
 reg_sequences.fit(X_train, y_train)
 
 score_train = reg_sequences.score(X_train, y_train)
@@ -86,50 +71,41 @@ print("Train score: {}".format(score_train))
 print("Test score: {}".format(score_test))
 
 
-# In[39]:
+# In[59]:
 
 
 from data_utils import aa_seq_to_int
 
-train_seq_ints = []
-test_seq_ints = []
+train_ints = train_proteins["sequence"].apply(aa_seq_to_int).tolist()
+test_ints = test_proteins["sequence"].apply(aa_seq_to_int).tolist()
 
-for seq in train_proteins["sequence"]:
-    seq_int = aa_seq_to_int(seq)
-    train_seq_ints += [seq_int]
-    
-for seq in test_proteins["sequence"]:
-    seq_int = aa_seq_to_int(seq)
-    test_seq_ints += [seq_int]
-    
-print(len(train_seq_ints))
-print(len(test_seq_ints))
-
-cv = 3
+cv = 20
 # LassoLars usage: https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LassoLars.html#sklearn.linear_model.LassoLars
 reg_sequences = linear_model.LassoLarsCV(cv=cv)
 print("Training...")
-reg_sequences.fit(train_seq_ints, train_proteins["stability"])
+print(len(train_ints))
+print(train_proteins["stability"].shape)
+reg_sequences.fit(train_ints, train_proteins["stability"])
 
-score_train = reg_sequences.score(train_seq_ints, train_proteins["stability"])
-score_test = reg_sequences.score(test_seq_ints, test_proteins["stability"])
+score_train = reg_sequences.score(train_ints, train_proteins["stability"])
+score_test = reg_sequences.score(test_ints, test_proteins["stability"])
 print("Train score: {}".format(score_train))
 print("Test score: {}".format(score_test))
 
 
-# In[40]:
+# In[53]:
 
 
 X_train, X_test, y_train, y_test = train_test_split(reps, ids["stability"], test_size=0.15)
 print("{} points in test set".format(X_train.shape[0]))
 
-cv = 3
+cv = 10
 reg_uni = linear_model.LassoLarsCV(cv=cv)
 print("Training {}-fold cross validated LassoLars with EclRep Fusion representations as input...".format(cv))
 reg_uni.fit(X_train, y_train)
 
 
-# In[1]:
+# In[54]:
 
 
 score_train = reg_uni.score(X_train, y_train)
@@ -160,27 +136,20 @@ py.iplot([trace], filename="Peptide Stability Prediction vs. Measured Stability"
 
 # ![Capture.PNG](/notebooks/Capture.PNG)
 
-# In[28]:
+# In[56]:
 
 
-cv = 3
+cv = 10
 reg_uni = linear_model.LassoLarsCV(cv=cv)
-print("Training {}-fold cross validated LassoLars with EclRep Fusion representations as input...".format(cv))
-print(train_reps.shape)
+print("Training {}-fold cross validated LassoLars with EclRep Fusion representations as input on {} input points...".format(cv, train_reps.shape))
 reg_uni.fit(train_reps, train_proteins["stability"])
 
 
-# In[29]:
+# In[57]:
 
 
 score_train = reg_uni.score(train_reps, train_proteins["stability"])
 score_test = reg_uni.score(test_reps, test_proteins["stability"])
 print("Train score: {}".format(score_train))
 print("Test score: {}".format(score_test))
-
-
-# In[ ]:
-
-
-
 
