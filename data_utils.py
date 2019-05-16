@@ -150,7 +150,7 @@ def fasta_to_input_format(source, destination):
 def bucketbatchpad(
         batch_size=256,
         path_to_data=os.path.join("./data/SwissProt/sprot_ints.fasta"), # Preprocessed- see note
-        compressed="", # See tf.contrib.data.TextLineDataset init args
+        compressed="", # See tf.data.TextLineDataset init args
         bounds=[128,256], # Default buckets of < 128, 128><256, >256
         # Unclear exactly what this does, should proly equal batchsize
         window_size=256, # NOT a tensor 
@@ -173,7 +173,7 @@ def bucketbatchpad(
     
     path_to_data = os.path.join(path_to_data)
     # Parse strings to tensors
-    dataset = tf.contrib.data.TextLineDataset(path_to_data).map(tf_seq_to_tensor)
+    dataset = tf.data.TextLineDataset(path_to_data).map(tf_seq_to_tensor)
     if filt is not None:
         dataset = dataset.filter(filt)
 
@@ -184,10 +184,10 @@ def bucketbatchpad(
     # See https://stackoverflow.com/questions/44132307/tf-contrib-data-dataset-repeat-with-shuffle-notice-epoch-end-mixed-epochs
     dataset = dataset.repeat(count=repeat)
     # Apply grouping to bucket and pad
-    grouped_dataset = dataset.group_by_window(
+    grouped_dataset = dataset.apply(tf.data.experimental.group_by_window(
         key_func=lambda seq: smart_length(tf_rank1_tensor_len(seq), bucket_bounds=bounds), # choose a bucket
         reduce_func=lambda key, ds: pad_batch(ds, batch_size, padding=padding, padded_shapes=pad_shape), # apply reduce funtion to pad
-        window_size=window_size)
+        window_size=window_size))
 
 
         
@@ -206,7 +206,7 @@ def shufflebatch(
     
     path_to_data = os.path.join(path_to_data)
     # Parse strings to tensors
-    dataset = tf.contrib.data.TextLineDataset(path_to_data).map(tf_seq_to_tensor)
+    dataset = tf.data.TextLineDataset(path_to_data).map(tf_seq_to_tensor)
     if shuffle_buffer:
         # Stream elements uniformly randomly from a buffer
         dataset = dataset.shuffle(buffer_size=shuffle_buffer)

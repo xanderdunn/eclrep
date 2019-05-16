@@ -1,4 +1,4 @@
-
+#!/usr/bin/env python
 # coding: utf-8
 
 # ## How to use the UniRep mLSTM "babbler". This version demonstrates the 64-unit and the 1900-unit architecture. 
@@ -44,7 +44,7 @@ else:
 
 # Initialize UniRep, also referred to as the "babbler" in our code. You need to provide the batch size you will use and the path to the weight directory.
 
-# In[3]:
+# In[6]:
 
 
 batch_size = 12
@@ -53,13 +53,13 @@ model = babbler(batch_size=batch_size, model_path=MODEL_WEIGHT_PATH)
 
 # UniRep needs to receive data in the correct format, a (batch_size, max_seq_len) matrix with integer values, where the integers correspond to an amino acid label at that position, and the end of the sequence is padded with 0s until the max sequence length to form a non-ragged rectangular matrix. We provide a formatting function to translate a string of amino acids into a list of integers with the correct codex:
 
-# In[4]:
+# In[7]:
 
 
 seq = "MRKGEELFTGVVPILVELDGDVNGHKFSVRGEGEGDATNGKLTLKFICTTGKLPVPWPTLVTTLTYGVQCFARYPDHMKQHDFFKSAMPEGYVQERTISFKDDGTYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNFNSHNVYITADKQKNGIKANFKIRHNVEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQSVLSKDPNEKRDHMVLLEFVTAAGITHGMDELYK"
 
 
-# In[5]:
+# In[8]:
 
 
 np.array(model.format_seq(seq))
@@ -67,7 +67,7 @@ np.array(model.format_seq(seq))
 
 # We also provide a function that will check your amino acid sequences don't contain any characters which will break the UniRep model.
 
-# In[6]:
+# In[9]:
 
 
 model.is_valid_seq(seq)
@@ -79,7 +79,7 @@ model.is_valid_seq(seq)
 # 
 # Sequence formatting can be done as follows:
 
-# In[7]:
+# In[10]:
 
 
 # Before you can train your model, 
@@ -88,14 +88,14 @@ with open("seqs.txt", "r") as source:
         for i,seq in enumerate(source):
             seq = seq.strip()
             if model.is_valid_seq(seq) and len(seq) < 275: 
-                formatted = ",".join(map(str,b.format_seq(seq)))
+                formatted = ",".join(map(str,model.format_seq(seq)))
                 destination.write(formatted)
                 destination.write('\n')
 
 
 # This is what the integer format looks like
 
-# In[8]:
+# In[11]:
 
 
 get_ipython().system('head -n1 formatted.txt')
@@ -113,7 +113,7 @@ get_ipython().system('head -n1 formatted.txt')
 # - Automatically padding the sequences with zeros so the returned batch is a perfect rectangle
 # - Automatically repeating the dataset
 
-# In[9]:
+# In[12]:
 
 
 bucket_op = model.bucket_batch_pad("formatted.txt", interval=1000) # Large interval
@@ -123,7 +123,7 @@ bucket_op = model.bucket_batch_pad("formatted.txt", interval=1000) # Large inter
 
 # Now that we have the `bucket_op`, we can simply `sess.run()` it to get a correctly formatted batch
 
-# In[10]:
+# In[13]:
 
 
 with tf.Session() as sess:
@@ -140,7 +140,7 @@ print(batch.shape)
 
 # First, obtain all of the ops needed to output a representation
 
-# In[11]:
+# In[14]:
 
 
 final_hidden, x_placeholder, batch_size_placeholder, seq_length_placeholder, initial_state_placeholder = (
@@ -157,7 +157,7 @@ final_hidden, x_placeholder, batch_size_placeholder, seq_length_placeholder, ini
 # 
 # 3.  Minimizing the loss inside of a TensorFlow session
 
-# In[12]:
+# In[15]:
 
 
 y_placeholder = tf.placeholder(tf.float32, shape=[None,1], name="y")
@@ -175,7 +175,7 @@ loss = tf.losses.mean_squared_error(y_placeholder, prediction)
 
 # You can specifically train the top model first by isolating variables of the "top" scope, and forcing the optimizer to only optimize these.
 
-# In[13]:
+# In[16]:
 
 
 learning_rate=.001
@@ -187,7 +187,7 @@ all_step_op = optimizer.minimize(loss)
 
 # We next need to define a function that allows us to calculate the length each sequence in the batch so that we know what index to use to obtain the right "final" hidden state
 
-# In[14]:
+# In[17]:
 
 
 def nonpad_len(batch):
@@ -200,7 +200,7 @@ nonpad_len(batch)
 
 # We are ready to train. As an illustration, let's learn to predict the number 42 just optimizing the top model.
 
-# In[15]:
+# In[18]:
 
 
 y = [[42]]*batch_size
