@@ -69,76 +69,96 @@ with tf.Session() as sess:
     saver.save(sess, "./")
 
 
-# In[124]:
+# In[142]:
 
 
 from unirep import mLSTMCell1900, tf_get_shape
+
+# FIXME: Group input sequences by length
 
 class babbler1900():
 
     def __init__(self,
                  model_path="./data/1900_weights",
-                 batch_size=5
+                 batch_size=500
                  ):
-        self._rnn_size = 1900
-        self._vocab_size = 26
-        self._embed_dim = 10
-        self._wn = True
-        self._shuffle_buffer = 10000
         self._model_path = model_path
         self._batch_size = batch_size
-        
-        # Get the input sequences
-        path = "./data/stability_data"
-        df = pd.read_table(os.path.join(path, "ssm2_stability_scores.txt"))
-        seqs = df["sequence"].iloc[:1000].values
-        seq_ints = [aa_seq_to_int(seq.strip())[:-1] for seq in seqs]
-        lengths = [len(x) for x in seq_ints]
-        print(max(lengths))
-        tf_tensor = tf.convert_to_tensor(seq_ints)
-        dataset = tf.data.Dataset.from_tensor_slices(tf_tensor).batch(batch_size)
-        iterator = dataset.make_one_shot_iterator()
-        input_tensor = iterator.get_next()
         
         # Batch size dimensional placeholder which gives the
         # Lengths of the input sequence batch. Used to index into
         # The final_hidden output and select the stop codon -1
         # final hidden for the graph operation.
-        rnn = mLSTMCell1900(self._rnn_size,
-                    model_path=model_path,
-                        wn=self._wn)
-        zero_state = rnn.zero_state(self._batch_size, tf.float32)
-        single_zero = rnn.zero_state(1, tf.float32)
+        self._rnn = mLSTMCell1900(1900,
+                    model_path=self._model_path,
+                        wn=True)
+        zero_state = self._rnn.zero_state(self._batch_size, tf.float32)
 
-        embed_matrix = tf.get_variable(
+        self._embed_matrix = tf.get_variable(
             "embed_matrix", dtype=tf.float32, initializer=np.load(os.path.join(self._model_path, "embed_matrix:0.npy"))
         )
-        embed_cell = tf.nn.embedding_lookup(embed_matrix, input_tensor)
         
         with tf.Session() as sess:
             self._zero_state = sess.run(zero_state)
-            self._single_zero = sess.run(single_zero)
-            
-        self._output, self._final_state = tf.nn.dynamic_rnn(
-            rnn,
+        
+    def get_reps(self, seqs):
+        # Get the input sequences
+        seq_ints = [aa_seq_to_int(seq.strip())[:-1] for seq in seqs]
+        lengths = [len(x) for x in seq_ints]
+        print(max(lengths))
+        tf_tensor = tf.convert_to_tensor(seq_ints)
+        dataset = tf.data.Dataset.from_tensor_slices(tf_tensor).batch(self._batch_size)
+        iterator = dataset.make_one_shot_iterator()
+        input_tensor = iterator.get_next()
+
+        embed_cell = tf.nn.embedding_lookup(self._embed_matrix, input_tensor)
+        _output, _final_state = tf.nn.dynamic_rnn(
+            self._rnn,
             embed_cell,
             initial_state=self._zero_state,
             swap_memory=True,
             parallel_iterations=1
         )
-        
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
-            final_state_, hs = sess.run([self._final_state, self._output])
+            final_state_, hs = sess.run([_final_state, _output])
             assert final_state_[0].shape[0] == self._batch_size
 
             final_cell, final_hidden = final_state_
             avg_hidden = np.array([np.mean(x, axis=0) for x in hs])
             together = np.concatenate((avg_hidden, final_hidden, final_cell), axis=1)
-            print(together)
+            return together
 
 tf.reset_default_graph()
-model = babbler1900()
+model = babbler1900(batch_size=5000)
+path = "./data/stability_data"
+df = pd.read_table(os.path.join(path, "ssm2_stability_scores.txt"))
+seqs = df["sequence"].iloc[:5000].values
+results = model.get_reps(seqs)
+print(results.shape)
+print(results)
+
+# Check that representations are reproducible
+import os
+import pandas as pd
+from tqdm import tqdm_notebook as tqdm
+
+# Load the saved representations
+path = "./data/stability_data"
+output_path = os.path.join(path, "stability_with_unirep_fusion.hdf")
+existing_seqs = pd.read_hdf(output_path, key="ids").reset_index(drop=True)
+existing_reps = pd.read_hdf(output_path, key="reps").reset_index(drop=True)
+assert existing_seqs.shape[0] == existing_reps.shape[0]
+assert np.array_equal(existing_seqs.index, existing_reps.index)
+
+# Create reprensetations for some seqs
+for index, row in tqdm(existing_seqs.iterrows(), total=existing_seqs.shape[0]):
+    check_rep = results[index]
+    true_rep = existing_reps.iloc[index].values
+
+    if not np.allclose(true_rep, check_rep, atol=0.00001):
+        true_check_diff = abs(np.sum(true_rep - check_rep))
+        print("{}: {} difference with saved truth".format(index, true_check_diff))
 
 
 # In[20]:
