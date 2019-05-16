@@ -69,7 +69,7 @@ with tf.Session() as sess:
     saver.save(sess, "./")
 
 
-# In[46]:
+# In[124]:
 
 
 from unirep import mLSTMCell1900, tf_get_shape
@@ -78,7 +78,7 @@ class babbler1900():
 
     def __init__(self,
                  model_path="./data/1900_weights",
-                 batch_size=1
+                 batch_size=5
                  ):
         self._rnn_size = 1900
         self._vocab_size = 26
@@ -91,13 +91,12 @@ class babbler1900():
         # Get the input sequences
         path = "./data/stability_data"
         df = pd.read_table(os.path.join(path, "ssm2_stability_scores.txt"))
-        seqs = df["sequence"].iloc[:100].values
+        seqs = df["sequence"].iloc[:1000].values
         seq_ints = [aa_seq_to_int(seq.strip())[:-1] for seq in seqs]
+        lengths = [len(x) for x in seq_ints]
+        print(max(lengths))
         tf_tensor = tf.convert_to_tensor(seq_ints)
-        print(tf_tensor)
-        dataset = tf.data.Dataset.from_tensor_slices(tf_tensor)
-        dataset.batch(1)
-        print(dataset)
+        dataset = tf.data.Dataset.from_tensor_slices(tf_tensor).batch(batch_size)
         iterator = dataset.make_one_shot_iterator()
         input_tensor = iterator.get_next()
         
@@ -114,7 +113,7 @@ class babbler1900():
         embed_matrix = tf.get_variable(
             "embed_matrix", dtype=tf.float32, initializer=np.load(os.path.join(self._model_path, "embed_matrix:0.npy"))
         )
-        embed_cell = tf.nn.embedding_lookup(embed_matrix, [input_tensor])
+        embed_cell = tf.nn.embedding_lookup(embed_matrix, input_tensor)
         
         with tf.Session() as sess:
             self._zero_state = sess.run(zero_state)
@@ -130,16 +129,13 @@ class babbler1900():
         
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
-        #         final_cell, final_hidden, hs = sess.run([final_cell_ts, final_hidden_ts, hs_ts])
             final_state_, hs = sess.run([self._final_state, self._output])
+            assert final_state_[0].shape[0] == self._batch_size
 
             final_cell, final_hidden = final_state_
-            # Drop the batch dimension so it is just seq len by representation size
-            final_cell = final_cell[0]
-            final_hidden = final_hidden[0]
-            hs = hs[0]
-            avg_hidden = np.mean(hs, axis=0)
-            print(avg_hidden, final_hidden, final_cell)
+            avg_hidden = np.array([np.mean(x, axis=0) for x in hs])
+            together = np.concatenate((avg_hidden, final_hidden, final_cell), axis=1)
+            print(together)
 
 tf.reset_default_graph()
 model = babbler1900()
