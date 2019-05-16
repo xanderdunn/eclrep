@@ -4,91 +4,31 @@
 # In[1]:
 
 
+# Initialize
 import tensorflow as tf
 import numpy as np
 
 # Set seeds
 tf.set_random_seed(42)
 np.random.seed(42)
-   
-# Import the mLSTM babbler model
-from unirep import babbler1900 as babbler
     
 # Where model weights are stored.
 MODEL_WEIGHT_PATH = "./data/1900_weights"
 
 
-# In[2]:
+# In[11]:
 
 
-tf.reset_default_graph()
-batch_size = 12
-model = babbler(batch_size=batch_size, model_path=MODEL_WEIGHT_PATH)
-
-
-# In[ ]:
-
-
-# Check that representations are reproducible
 import os
+from unirep import mLSTMCell1900, tf_get_shape, aa_seq_to_int
 import pandas as pd
-from tqdm import tqdm_notebook as tqdm
-
-# Load the saved representations
-path = "./data/stability_data"
-output_path = os.path.join(path, "stability_with_unirep_fusion.hdf")
-existing_seqs = pd.read_hdf(output_path, key="ids").reset_index(drop=True)
-existing_reps = pd.read_hdf(output_path, key="reps").reset_index(drop=True)
-assert existing_seqs.shape[0] == existing_reps.shape[0]
-assert np.array_equal(existing_seqs.index, existing_reps.index)
-
-# Create reprensetations for some seqs
-for index, row in tqdm(existing_seqs.iterrows(), total=existing_seqs.shape[0]):
-    check_rep_1 = model.get_rep(row["sequence"])
-    check_rep_1 = np.concatenate((check_rep_1[0], check_rep_1[1], check_rep_1[2]))
-    check_rep_2 = model.get_rep(row["sequence"])
-    check_rep_2 = np.concatenate((check_rep_2[0], check_rep_2[1], check_rep_2[2]))
-    true_rep = existing_reps.iloc[index].values
-
-    if not np.allclose(true_rep, check_rep_1, atol=0.0002) or not np.allclose(check_rep_1, check_rep_2, atol=0.0002):
-        true_check_diff = abs(np.sum(true_rep - check_rep_1))
-        self_run_diff = abs(np.sum(check_rep_1 - check_rep_2))
-        print("{}: {} difference with saved truth".format(index, true_check_diff))
-        print("{}: {} difference with self comparison".format(index, self_run_diff))
-
-
-# In[9]:
-
-
-# Save meta_graph
-# graph_def = tf.Session().graph_def
-# graph_def = tf.get_default_graph().as_graph_def() # Get the loaded babbler graph
-with tf.Session() as sess:
-    sess.run(tf.global_variables_initializer())
-    saver = tf.train.Saver()
-    saver.save(sess, "./")
-
-
-# In[142]:
-
-
-from unirep import mLSTMCell1900, tf_get_shape
-
-# FIXME: Group input sequences by length
 
 class babbler1900():
 
-    def __init__(self,
-                 model_path="./data/1900_weights",
-                 batch_size=500
-                 ):
+    def __init__(self, model_path="./data/1900_weights", batch_size=500):
         self._model_path = model_path
         self._batch_size = batch_size
         
-        # Batch size dimensional placeholder which gives the
-        # Lengths of the input sequence batch. Used to index into
-        # The final_hidden output and select the stop codon -1
-        # final hidden for the graph operation.
         self._rnn = mLSTMCell1900(1900,
                     model_path=self._model_path,
                         wn=True)
@@ -105,7 +45,6 @@ class babbler1900():
         # Get the input sequences
         seq_ints = [aa_seq_to_int(seq.strip())[:-1] for seq in seqs]
         lengths = [len(x) for x in seq_ints]
-        print(max(lengths))
         tf_tensor = tf.convert_to_tensor(seq_ints)
         dataset = tf.data.Dataset.from_tensor_slices(tf_tensor).batch(self._batch_size)
         iterator = dataset.make_one_shot_iterator()
@@ -129,14 +68,35 @@ class babbler1900():
             together = np.concatenate((avg_hidden, final_hidden, final_cell), axis=1)
             return together
 
-tf.reset_default_graph()
-model = babbler1900(batch_size=5000)
+# Create nets and run inference on a given list of sequences
+def inference_on_seqs(seqs):
+    len_func = lambda x: len(x)
+    len_np = np.vectorize(len_func)
+    seq_lengths = len_np(seqs)
+    unique_lengths = np.unique(seq_lengths)
+    results = None
+    for unique_length in unique_lengths:
+        boolean_mask = seq_lengths == unique_length
+        seqs_of_length = seqs[boolean_mask]
+        print("Getting EclRep representations for {} sequences of length {}...".format(seqs_of_length.shape[0], unique_length))
+        tf.reset_default_graph()
+        model = babbler1900(batch_size=seqs_of_length.shape[0])
+        result = model.get_reps(seqs_of_length)
+        print("Done")
+        if results is not None:
+            results = np.concatenate((results, result))
+        else:
+            results = result
+    return results
+    
+    
 path = "./data/stability_data"
 df = pd.read_table(os.path.join(path, "ssm2_stability_scores.txt"))
-seqs = df["sequence"].iloc[:5000].values
-results = model.get_reps(seqs)
-print(results.shape)
-print(results)
+seqs = df["sequence"].values
+results = inference_on_seqs(seqs)
+print("Got {} results".format(results.shape))
+assert results.shape[0] == seqs.shape[0]
+assert results.shape[1] == 5700
 
 # Check that representations are reproducible
 import os
@@ -152,11 +112,12 @@ assert existing_seqs.shape[0] == existing_reps.shape[0]
 assert np.array_equal(existing_seqs.index, existing_reps.index)
 
 # Create reprensetations for some seqs
+print("Checking that these results match the saved truth...")
 for index, row in tqdm(existing_seqs.iterrows(), total=existing_seqs.shape[0]):
     check_rep = results[index]
     true_rep = existing_reps.iloc[index].values
 
-    if not np.allclose(true_rep, check_rep, atol=0.00001):
+    if not np.allclose(true_rep, check_rep, atol=0.001):
         true_check_diff = abs(np.sum(true_rep - check_rep))
         print("{}: {} difference with saved truth".format(index, true_check_diff))
 
