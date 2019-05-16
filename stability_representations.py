@@ -16,7 +16,7 @@ np.random.seed(42)
 MODEL_WEIGHT_PATH = "./data/1900_weights"
 
 
-# In[39]:
+# In[62]:
 
 
 import os
@@ -81,7 +81,7 @@ class babbler1900():
             return together
 
 # Given a pandas dataframe with a column "sequence", return a list of pandas dataframes grouped by sequence length
-def create_batches(seqs):
+def create_batches(seqs, batch_max_size=10000):
     # Get the unique lengths of all these sequences
     batches = []
     lengths = seqs["sequence"].apply(lambda x: len(x))
@@ -89,7 +89,10 @@ def create_batches(seqs):
     for unique_length in unique_lengths:
         boolean_mask = lengths == unique_length
         seqs_of_length = seqs[boolean_mask]
-        batches += [seqs_of_length]
+        if seqs_of_length.shape[0] > batch_max_size:
+            batches += np.array_split(seqs_of_length, 2)
+        else:
+            batches += [seqs_of_length]
     print("There are {} batches".format(len(batches)))
     return batches
     
@@ -114,7 +117,7 @@ def inference_on_seqs(seqs):
     reps = pd.DataFrame(columns=list(range(0, 5700)))
     
     for batch in batches:
-        print("Getting EclRep representations for {} sequences...".format(batch.shape[0]))
+        print("Getting EclRep representations for {} sequences of length {}...".format(batch.shape[0], len(batch.iloc[0]["sequence"])))
         reps_new = inference_on_seqs_array(batch["sequence"])
         print("Done")
         reps = reps.append(pd.DataFrame(reps_new))
@@ -123,8 +126,11 @@ def inference_on_seqs(seqs):
         else:
             ids = batch
     return ids, reps
-    
-    
+
+
+# In[ ]:
+
+
 path = "./data/stability_data"
 df = pd.read_table(os.path.join(path, "ssm2_stability_scores.txt"))
 ids, results = inference_on_seqs(df)
@@ -156,7 +162,7 @@ for index, row in tqdm(existing_seqs.iterrows(), total=existing_seqs.shape[0]):
         print("{}: {} difference with saved truth".format(index, true_check_diff))
 
 
-# In[19]:
+# In[73]:
 
 
 import os
@@ -165,42 +171,55 @@ import numpy as np
 from tqdm import tqdm_notebook as tqdm
 
 path = "./data/stability_data"
-output_path = os.path.join(path, "all_stability_with_eclrep_fusion.hdf")
+output_ids_path = os.path.join(path, "all_rds_ids.hdf")
+output_reps_path = os.path.join(path, "all_rds_reps.hdf")
 
-reps_output = pd.DataFrame(columns=list(range(0, 5700)))
-
-# TODO: Assert that there are no duplicate sequences
-# TODO: How do I match the reps with sequences?
+ids = None
+reps = None
 
 for filename in os.listdir(path):
-    if filename.endswith(".txt"):
-        print("Processing data from {}".format(filename))
+    if filename.endswith(".txt") and "rd" in filename:
         df = pd.read_table(os.path.join(path, filename))
+        print("Processing {} rows from {}...".format(df.shape[0], filename))
         if "consensus_stability_score" in df.columns:
             stability_name = "consensus_stability_score"
         else:
             stability_name = "stabilityscore"
         df = df[["name", "sequence", stability_name]]
         df.rename(columns={'consensus_stability_score': 'stability', 'stabilityscore': 'stability'}, inplace=True)
-        results = inference_on_seqs(df["sequence"].values)
-        print(results.shape)
-        
-#     if model.is_valid_seq(row["sequence"], max_len=500):
-#         unirep_fusion = model.get_rep(row["sequence"])
-#         unirep_fusion = np.concatenate((unirep_fusion[0], unirep_fusion[1], unirep_fusion[2]))
-#         print(unirep_fusion.shape)
+        ids_new, reps_new = inference_on_seqs(df)
+        if ids is None:
+            ids = ids_new
+            reps = reps_new
+        else:
+            ids = ids.append(ids_new)
+            reps = reps.append(reps_new)
+        print("")
+           
+# Remove duplicates
+before_size = reps.shape[0]
+ids.reset_index(drop=True, inplace=True)
+reps.reset_index(drop=True, inplace=True)
+duplicated = ids.duplicated(subset="sequence", keep=False)
+reps = reps[~duplicated]
+reps.reset_index(drop=True, inplace=True)
+ids = ids[~duplicated]
+ids.reset_index(drop=True, inplace=True)
+print("Removed {} duplicates".format(before_size - reps.shape[0]))
+
+assert reps.shape[0] == ids.shape[0]
+print("Final rows: {}".format(reps.shape))
+print("Saving to file...")
+ids.to_hdf(output_ids_path, index=False, mode="w", key="ids", format="fixed")
+reps.to_hdf(output_reps_path, index=False, mode="w", key="reps", format="fixed")
 
 
-ids_output.to_hdf(output_path, index=False, mode="a", key="ids", format="fixed")
-reps_output.to_hdf(output_path, index=False, mode="a", key="reps", format="fixed")
+# In[71]:
 
 
-# In[ ]:
-
-
-ids = pd.read_hdf(output_path, key="ids")
-print("{} points in ids".format(ids.shape[0]))
-reps = pd.read_hdf(output_path, key="reps")
-print("{} points in reps".format(reps.shape[0]))
+ids = pd.read_hdf(output_ids_path)
+print("{} in ids".format(ids.shape))
+reps = pd.read_hdf(output_reps_path)
+print("{} in reps".format(reps.shape))
 print(reps.iloc[0])
 
