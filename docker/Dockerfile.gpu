@@ -1,7 +1,6 @@
 FROM tensorflow/tensorflow:1.13.1-gpu-py3-jupyter
 
 ADD requirements.txt /install/requirements.txt
-# ADD docker/jupyter_notebook_config.py $HOME/.jupyter/jupyter_notebook_config.py
 RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r /install/requirements.txt
 
@@ -19,6 +18,14 @@ RUN pip install --no-cache-dir -r /install/requirements.txt
 COPY docker/jupyter_notebook_config.py /root/.jupyter/
 RUN jupyter nbextension enable --py --sys-prefix widgetsnbextension
 
-WORKDIR /tf/notebooks
+RUN pip install jupyter_contrib_nbextensions
+RUN jupyter contrib nbextension install
 
-# CMD /run_jupyter.sh --allow-root
+# Jupyter vim bindings
+RUN apt-get install -y git
+RUN mkdir -p $(jupyter --data-dir)/nbextensions
+RUN git clone https://github.com/lambdalisue/jupyter-vim-binding $(jupyter --data-dir)/nbextensions/vim_binding
+RUN jupyter nbextension enable vim_binding/vim_binding
+RUN jupyter nbextension enable code_prettify/code_prettify
+
+WORKDIR /tf/notebooks
