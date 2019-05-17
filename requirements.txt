@@ -4,3 +4,6 @@ jupyter==1.0.0
 tqdm
 tables
 plotly
+autopep8
+yapf
+scikit-learn
