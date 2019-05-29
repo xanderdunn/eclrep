@@ -16,11 +16,13 @@ np.random.seed(42)
 MODEL_WEIGHT_PATH = "./data/1900_weights"
 
 
-# In[62]:
+# In[2]:
 
 
+# Define functions and classes for feed-forward network
 import os
-from unirep import mLSTMCell1900, tf_get_shape, aa_seq_to_int
+from unirep import mLSTMCell1900, tf_get_shape
+from data_utils import aa_seq_to_int
 import pandas as pd
 
 
@@ -131,6 +133,8 @@ def inference_on_seqs(seqs):
 # In[ ]:
 
 
+# Check that representations are reproducible
+# This checks ~11,000 representations 
 path = "./data/stability_data"
 df = pd.read_table(os.path.join(path, "ssm2_stability_scores.txt"))
 ids, results = inference_on_seqs(df)
@@ -138,7 +142,6 @@ print("Got {} results".format(results.shape))
 assert results.shape[0] == seqs.shape[0]
 assert results.shape[1] == 5700
 
-# Check that representations are reproducible
 import os
 import pandas as pd
 from tqdm import tqdm_notebook as tqdm
@@ -214,7 +217,7 @@ ids.to_hdf(output_ids_path, index=False, mode="w", key="ids", format="fixed")
 reps.to_hdf(output_reps_path, index=False, mode="w", key="reps", format="fixed")
 
 
-# In[71]:
+# In[74]:
 
 
 ids = pd.read_hdf(output_ids_path)
